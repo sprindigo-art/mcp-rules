@@ -1,0 +1,5 @@
+node_modules/
+governance_state.json
+governance_state.json.backup
+*.log
+.DS_Store
