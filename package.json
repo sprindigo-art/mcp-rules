@@ -1,0 +1,13 @@
+{
+  "name": "mcp-rules",
+  "version": "1.0.0",
+  "description": "MCP Server for Active Rules Enforcement",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "fs-extra": "^11.1.1"
+  }
+}
