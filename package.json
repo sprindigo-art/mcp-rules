@@ -1,7 +1,7 @@
 {
   "name": "mcp-rules",
-  "version": "12.0.0",
-  "description": "MCP Rules v12.0.0 - 100% Compliance Sync dengan MCP Memory v11.0 Exploit System.",
+  "version": "14.0.0",
+  "description": "MCP Rules v14.0.0-OPTIMIZED - AI Governance & Compliance System with Hard Block Enforcement, Compression Recovery, Multi-Instance SafeStorage.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

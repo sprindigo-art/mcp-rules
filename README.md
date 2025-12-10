@@ -152,6 +152,7 @@ mcp-rules/
 - `@modelcontextprotocol/sdk` - MCP Protocol
 - `fs-extra` - File system operations
 - `proper-lockfile` - File locking
+- `async-lock` - Async mutex for multi-instance safety
 
 ## License
 

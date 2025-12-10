@@ -2394,7 +2394,7 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 
 // v10.0 Compact startup - multi-instance safe
-console.error(`[MCP-RULES v${VERSION}] READY | SafeStorage: ON | Path: ${STATE_FILE} | Tools: 24 | Mode: ABSOLUTE_GOVERNANCE`);
+console.error(`[MCP-RULES v${VERSION}] READY | SafeStorage: ON | Path: ${STATE_FILE} | Tools: 10 | Mode: ABSOLUTE_GOVERNANCE`);
 
 // Save initial state
 await savePersistentState(currentWorkflowState);
