@@ -25,7 +25,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // - RESPONSE POISONING: All responses include compliance metadata
 // ═══════════════════════════════════════════════════════════════════════════════
 // v13.0.0: COMPACT RESPONSE + REMOVE ASCII ART + IMPROVED MULTI-INSTANCE
-const VERSION = "14.0.0-OPTIMIZED"; // Reduced from 25 to 10 tools
+const VERSION = "14.1.0-MULTIPLATFORM"; // v14.1: Multi-platform multi-AI rules detection (Linux/Windows)
 
 // --- PERSISTENT STATE FILE ---
 const STATE_FILE = path.join(__dirname, 'governance_state.json');
@@ -58,29 +58,203 @@ const COMPLIANCE_ANCHORS = [
     "📋 WORKFLOW REMINDER"
 ];
 
-// Detect correct rules path based on platform and environment
-function detectRulesPath() {
+// ═══════════════════════════════════════════════════════════════════════════════
+// v14.1 MULTI-PLATFORM MULTI-AI RULES DETECTION
+// Supports: Linux + Windows | Droid/Factory, Antigravity, Trae, Gemini, Claude
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RULES_LOCATIONS = {
+    // Linux paths
+    linux: [
+        '/root/.factory/AGENTS.md',           // Factory CLI (Droid) - Linux root
+        '/root/.gemini/GEMINI.md',            // Gemini/Antigravity - Linux root
+        '/root/.claude/CLAUDE.md',            // Claude CLI - Linux root
+        '/root/.trae/user_rules.md',          // Trae - Linux root
+    ],
+    // Windows paths (will be combined with homeDir)
+    windows: [
+        '.factory\\AGENTS.md',                // Factory CLI (Droid) - Windows
+        '.gemini\\GEMINI.md',                 // Gemini/Antigravity - Windows
+        '.claude\\CLAUDE.md',                 // Claude CLI - Windows
+        '.trae\\user_rules.md',               // Trae - Windows
+    ],
+    // Universal paths (relative to homeDir)
+    universal: [
+        '.factory/AGENTS.md',
+        '.gemini/GEMINI.md',
+        '.claude/CLAUDE.md',
+        '.trae/user_rules.md',
+    ]
+};
+
+// AI detection based on environment
+function detectCurrentAI() {
+    const env = process.env;
+    
+    // Check for specific AI indicators
+    if (env.FACTORY_API_KEY || env.DROID_SESSION) return 'droid';
+    if (env.ANTHROPIC_API_KEY || env.CLAUDE_SESSION) return 'claude';
+    if (env.GOOGLE_AI_KEY || env.GEMINI_SESSION || process.argv.includes('--gemini')) return 'gemini';
+    if (env.TRAE_SESSION || process.argv.includes('--trae')) return 'trae';
+    
+    // Check parent process name
+    const parentPid = process.ppid;
+    try {
+        const parentCmd = require('child_process').execSync(`ps -p ${parentPid} -o comm=`, { encoding: 'utf-8' }).trim();
+        if (parentCmd.includes('antigravity') || parentCmd.includes('gemini')) return 'gemini';
+        if (parentCmd.includes('trae')) return 'trae';
+        if (parentCmd.includes('droid') || parentCmd.includes('factory')) return 'droid';
+        if (parentCmd.includes('claude')) return 'claude';
+    } catch (e) {
+        // Ignore errors on Windows
+    }
+    
+    return 'unknown';
+}
+
+// Detect all available rules files
+function detectAllRulesPaths() {
     const homeDir = os.default.homedir();
+    const isWindows = platform === 'win32';
+    const foundRules = [];
     
-    // Priority order for rules detection
-    const possiblePaths = [
-        '/root/.factory/AGENTS.md',           // Factory CLI (Droid) - Linux
-        '/root/.claude/CLAUDE.md',            // Claude CLI - Linux
-        path.join(homeDir, '.factory', 'AGENTS.md'),  // Factory CLI - user home
-        path.join(homeDir, '.claude', 'CLAUDE.md'),   // Claude CLI - user home
-        './AGENTS.md',                        // Current directory
-        '../AGENTS.md'                        // Parent directory
-    ];
+    // Build complete list of paths to check
+    const allPaths = [];
     
-    for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-            console.error(`[MCP-RULES v${VERSION}] Found rules at: ${p}`);
-            return p;
+    // Platform-specific paths
+    if (isWindows) {
+        RULES_LOCATIONS.windows.forEach(p => {
+            allPaths.push(path.join(homeDir, p));
+        });
+    } else {
+        // Linux-specific root paths
+        RULES_LOCATIONS.linux.forEach(p => {
+            allPaths.push(p);
+        });
+    }
+    
+    // Universal paths (homeDir-based)
+    RULES_LOCATIONS.universal.forEach(p => {
+        const fullPath = path.join(homeDir, p);
+        if (!allPaths.includes(fullPath)) {
+            allPaths.push(fullPath);
+        }
+    });
+    
+    // Current and parent directory
+    allPaths.push('./AGENTS.md', './GEMINI.md', './user_rules.md');
+    allPaths.push('../AGENTS.md', '../GEMINI.md', '../user_rules.md');
+    
+    // Check each path
+    for (const p of allPaths) {
+        try {
+            if (fs.existsSync(p)) {
+                const stats = fs.statSync(p);
+                foundRules.push({
+                    path: p,
+                    size: stats.size,
+                    modified: stats.mtime,
+                    ai: detectAIFromPath(p)
+                });
+            }
+        } catch (e) {
+            // Ignore access errors
         }
     }
     
-    // Fallback to Factory default
-    return '/root/.factory/AGENTS.md';
+    return foundRules;
+}
+
+// Detect AI type from path
+function detectAIFromPath(filePath) {
+    const lowerPath = filePath.toLowerCase();
+    if (lowerPath.includes('factory') || lowerPath.includes('agents')) return 'droid';
+    if (lowerPath.includes('gemini')) return 'gemini';
+    if (lowerPath.includes('claude')) return 'claude';
+    if (lowerPath.includes('trae')) return 'trae';
+    return 'unknown';
+}
+
+// Primary rules detection - returns single best path
+function detectRulesPath() {
+    const homeDir = os.default.homedir();
+    const isWindows = platform === 'win32';
+    const currentAI = detectCurrentAI();
+    
+    console.error(`[MCP-RULES v${VERSION}] Platform: ${platform}, HomeDir: ${homeDir}, AI: ${currentAI}`);
+    
+    // Priority order based on detected AI
+    const priorityMap = {
+        'droid': ['AGENTS.md', 'GEMINI.md', 'CLAUDE.md', 'user_rules.md'],
+        'gemini': ['GEMINI.md', 'AGENTS.md', 'CLAUDE.md', 'user_rules.md'],
+        'claude': ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md', 'user_rules.md'],
+        'trae': ['user_rules.md', 'AGENTS.md', 'GEMINI.md', 'CLAUDE.md'],
+        'unknown': ['AGENTS.md', 'GEMINI.md', 'CLAUDE.md', 'user_rules.md']
+    };
+    
+    const priority = priorityMap[currentAI] || priorityMap['unknown'];
+    
+    // Build ordered paths list
+    const orderedPaths = [];
+    
+    for (const ruleName of priority) {
+        if (isWindows) {
+            // Windows paths
+            orderedPaths.push(path.join(homeDir, '.factory', ruleName));
+            orderedPaths.push(path.join(homeDir, '.gemini', ruleName));
+            orderedPaths.push(path.join(homeDir, '.claude', ruleName));
+            orderedPaths.push(path.join(homeDir, '.trae', ruleName));
+        } else {
+            // Linux paths - root first, then home
+            orderedPaths.push(`/root/.factory/${ruleName}`);
+            orderedPaths.push(`/root/.gemini/${ruleName}`);
+            orderedPaths.push(`/root/.claude/${ruleName}`);
+            orderedPaths.push(`/root/.trae/${ruleName}`);
+            orderedPaths.push(path.join(homeDir, '.factory', ruleName));
+            orderedPaths.push(path.join(homeDir, '.gemini', ruleName));
+            orderedPaths.push(path.join(homeDir, '.claude', ruleName));
+            orderedPaths.push(path.join(homeDir, '.trae', ruleName));
+        }
+    }
+    
+    // Add current directory fallbacks
+    orderedPaths.push('./AGENTS.md', './GEMINI.md', './user_rules.md');
+    
+    // Find first existing file
+    for (const p of orderedPaths) {
+        try {
+            if (fs.existsSync(p)) {
+                console.error(`[MCP-RULES v${VERSION}] Found rules at: ${p} (AI: ${detectAIFromPath(p)})`);
+                return p;
+            }
+        } catch (e) {
+            // Ignore access errors
+        }
+    }
+    
+    // Fallback
+    const fallback = isWindows 
+        ? path.join(homeDir, '.factory', 'AGENTS.md')
+        : '/root/.factory/AGENTS.md';
+    
+    console.error(`[MCP-RULES v${VERSION}] No rules found, using fallback: ${fallback}`);
+    return fallback;
+}
+
+// Get all rules info (for reporting)
+function getAllRulesInfo() {
+    const allRules = detectAllRulesPaths();
+    const currentAI = detectCurrentAI();
+    const primaryPath = detectRulesPath();
+    
+    return {
+        platform: platform,
+        detected_ai: currentAI,
+        primary_rules_path: primaryPath,
+        all_found_rules: allRules,
+        total_rules_files: allRules.length,
+        timestamp: new Date().toISOString()
+    };
 }
 
 const RULES_PATH = detectRulesPath();
@@ -1483,6 +1657,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Generate comprehensive compliance report untuk session saat ini.",
         inputSchema: { type: "object", properties: {} }
       },
+      {
+        name: "get_rules_info",
+        description: "v14.1: Get info tentang semua rules files yang terdeteksi di sistem (Linux/Windows, multi-AI support). Berguna untuk debug multi-platform setup.",
+        inputSchema: { type: "object", properties: {} }
+      },
       // v14.0: MCP Memory Enforcement REMOVED - redundan dengan MCP Memory v14
       // - get_mcp_memory_reminder REMOVED
       // - sync_memory_tracking REMOVED
@@ -2382,6 +2561,50 @@ START EXECUTION NOW.
         };
         
         const response = wrapResponseWithGovernance("get_compression_recovery_protocol", result);
+        return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // v14.1 NEW: MULTI-PLATFORM RULES INFO
+    // ═══════════════════════════════════════════════════════════════════════════════
+    case "get_rules_info": {
+        const rulesInfo = getAllRulesInfo();
+        
+        const result = {
+            status: "RULES_INFO_RETRIEVED",
+            version: VERSION,
+            platform_info: {
+                platform: rulesInfo.platform,
+                detected_ai: rulesInfo.detected_ai,
+                is_windows: rulesInfo.platform === 'win32',
+                is_linux: rulesInfo.platform === 'linux'
+            },
+            primary_rules: {
+                path: rulesInfo.primary_rules_path,
+                ai_type: detectAIFromPath(rulesInfo.primary_rules_path)
+            },
+            all_rules_found: rulesInfo.all_found_rules.map(r => ({
+                path: r.path,
+                ai: r.ai,
+                size: r.size,
+                modified: r.modified
+            })),
+            total_rules_files: rulesInfo.total_rules_files,
+            supported_locations: {
+                linux: RULES_LOCATIONS.linux,
+                windows: RULES_LOCATIONS.windows,
+                universal: RULES_LOCATIONS.universal
+            },
+            conflict_analysis: {
+                has_multiple_rules: rulesInfo.total_rules_files > 1,
+                recommendation: rulesInfo.total_rules_files > 1 
+                    ? "Multiple rules files ditemukan. Pastikan konten SAMA untuk menghindari konflik behavior."
+                    : "Hanya 1 rules file - tidak ada potensi konflik."
+            },
+            timestamp: new Date().toISOString()
+        };
+        
+        const response = wrapResponseWithGovernance("get_rules_info", result);
         return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
     }
 
